@@ -135,6 +135,8 @@ BUILD_ASSERT(NRFX_TIMER_CONFIG_LABEL(ANOMALY_172_TIMER_INSTANCE) == 1,
 #define BLOCKER_FIX_WAIT_DEFAULT 10
 /* Timeout of Anomaly timer (in us) */
 #define BLOCKER_FIX_WAIT_END 500
+/* Guard timeout for waiting RADIO DISABLED event (in us). */
+#define RADIO_DISABLE_WAIT_TIMEOUT_US 5000
 /* Threshold used to determine necessary strict mode status changes. */
 #define BLOCKER_FIX_CNTDETECTTHR 15
 /* Threshold used to determine necessary strict mode status changes. */
@@ -1166,6 +1168,8 @@ static void radio_tx_power_set(uint8_t channel, int8_t tx_power, nrf_radio_mode_
 
 static void radio_reset(void)
 {
+	uint32_t elapsed_us = 0;
+
 	if (nrfx_gppi_channel_check(dtm_inst.ppi_radio_start)) {
 		nrfx_gppi_channels_disable(BIT(dtm_inst.ppi_radio_start));
 	}
@@ -1175,7 +1179,11 @@ static void radio_reset(void)
 
 	nrf_radio_task_trigger(NRF_RADIO, NRF_RADIO_TASK_DISABLE);
 	while (!nrf_radio_event_check(NRF_RADIO, NRF_RADIO_EVENT_DISABLED)) {
-		/* Do nothing */
+		if (elapsed_us++ >= RADIO_DISABLE_WAIT_TIMEOUT_US) {
+			break;
+		}
+
+		k_busy_wait(1);
 	}
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_DISABLED);
 
@@ -1752,6 +1760,14 @@ static void radio_start(bool rx, bool force_egu)
 
 static void radio_prepare(bool rx)
 {
+	uint32_t radio_irq_mask = NRF_RADIO_INT_READY_MASK |
+				  NRF_RADIO_INT_ADDRESS_MASK |
+				  NRF_RADIO_INT_END_MASK;
+
+#if defined(RADIO_EVENTS_RSSIEND_EVENTS_RSSIEND_Msk)
+	radio_irq_mask |= NRF_RADIO_INT_RSSIEND_MASK;
+#endif
+
 #if DIRECTION_FINDING_SUPPORTED
 	if (dtm_inst.cte_info.mode != DTM_CTE_MODE_OFF) {
 		radio_cte_prepare(rx);
@@ -1798,16 +1814,11 @@ static void radio_prepare(bool rx)
 #endif /* CONFIG_FEM */
 
 	NVIC_ClearPendingIRQ(RADIO_IRQn);
-	irq_enable(RADIO_IRQn);
-	nrf_radio_int_enable(NRF_RADIO,
-			NRF_RADIO_INT_READY_MASK |
-			NRF_RADIO_INT_ADDRESS_MASK |
-#if defined(RADIO_EVENTS_RSSIEND_EVENTS_RSSIEND_Msk)
-			NRF_RADIO_INT_RSSIEND_MASK |
-#endif
-			NRF_RADIO_INT_END_MASK);
 
 	if (rx) {
+		irq_enable(RADIO_IRQn);
+		nrf_radio_int_enable(NRF_RADIO, radio_irq_mask);
+
 #if NRF52_ERRATA_172_PRESENT
 		/* Enable strict mode for anomaly 172 */
 		if (dtm_inst.anomaly_172_wa_enabled) {
@@ -1827,6 +1838,13 @@ static void radio_prepare(bool rx)
 
 		radio_start(rx, false);
 	} else { /* tx */
+		/* TX test mode does not require per-packet RADIO IRQ handling.
+		 * Keeping IRQs disabled here reduces interrupt load and improves
+		 * UART command responsiveness (for TEST_END and setup commands).
+		 */
+		irq_disable(RADIO_IRQn);
+		nrf_radio_int_disable(NRF_RADIO, radio_irq_mask);
+
 		radio_tx_power_set(dtm_inst.phys_ch, dtm_inst.txpower, dtm_inst.radio_mode);
 
 #if NRF52_ERRATA_172_PRESENT
