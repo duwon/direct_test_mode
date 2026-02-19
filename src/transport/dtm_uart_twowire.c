@@ -773,41 +773,42 @@ union dtm_tr_packet dtm_tr_get(void)
 	for (;;) {
 		dtm_uart_wait();
 
-		err = uart_poll_in(dtm_uart, &rx_byte);
-		if (err) {
-			if (err != -1) {
-				LOG_ERR("UART polling error: %d", err);
+		/* Drain all currently buffered UART bytes before next wait cycle.
+		 * This reduces command-byte loss under bursty interrupt load.
+		 */
+		for (;;) {
+			err = uart_poll_in(dtm_uart, &rx_byte);
+			if (err) {
+				if (err != -1) {
+					LOG_ERR("UART polling error: %d", err);
+				}
+
+				/* Nothing more buffered in UART */
+				break;
 			}
 
-			/* Nothing read from the UART */
-			continue;
-		}
+			if (!is_msb_read) {
+				/* This is first byte of two-byte command. */
+				is_msb_read = true;
+				dtm_cmd = rx_byte << 8;
+				msb_time = k_uptime_get();
+				continue;
+			}
 
-		if (!is_msb_read) {
-			/* This is first byte of two-byte command. */
-			is_msb_read = true;
-			dtm_cmd = rx_byte << 8;
-			msb_time = k_uptime_get();
-
-			/* Go back and wait for 2nd byte of command word. */
-			continue;
-		}
-
-		/* This is the second byte read; combine it with the first and
-		 * process command.
-		 */
-		if ((k_uptime_get() - msb_time) >
-		    DTM_UART_SECOND_BYTE_MAX_DELAY) {
-			/* More than ~5mS after msb: Drop old byte, take the
-			 * new byte as MSB. The variable is_msb_read will
-			 * remain true.
+			/* This is the second byte read; combine it with the first and
+			 * process command.
 			 */
-			dtm_cmd = rx_byte << 8;
-			msb_time = k_uptime_get();
-			/* Go back and wait for 2nd byte of command word. */
-			LOG_DBG("Received byte discarded");
-			continue;
-		} else {
+			if ((k_uptime_get() - msb_time) >
+			    DTM_UART_SECOND_BYTE_MAX_DELAY) {
+				/* If second byte comes too late, drop stale MSB and treat
+				 * this byte as new MSB.
+				 */
+				dtm_cmd = rx_byte << 8;
+				msb_time = k_uptime_get();
+				LOG_DBG("Received byte discarded");
+				continue;
+			}
+
 			dtm_cmd |= rx_byte;
 			LOG_INF("Received 0x%04x command", dtm_cmd);
 			tmp.twowire = dtm_cmd;
