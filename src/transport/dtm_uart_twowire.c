@@ -71,7 +71,7 @@ LOG_MODULE_REGISTER(dtm_tw_tr, CONFIG_DTM_TRANSPORT_LOG_LEVEL);
  * Some desktop UART stacks can introduce >5 ms inter-byte gaps on low baudrate
  * links, especially after stop/start transitions. Use a more tolerant window.
  */
-#define DTM_UART_SECOND_BYTE_MAX_DELAY 50
+#define DTM_UART_SECOND_BYTE_MAX_DELAY 10
 
 static const struct device *dtm_uart = DEVICE_DT_GET(DTM_UART);
 

@@ -1760,7 +1760,13 @@ static void radio_start(bool rx, bool force_egu)
 
 static void radio_prepare(bool rx)
 {
-	uint32_t radio_irq_mask = NRF_RADIO_INT_END_MASK;
+	uint32_t radio_irq_mask = NRF_RADIO_INT_READY_MASK |
+				  NRF_RADIO_INT_ADDRESS_MASK |
+				  NRF_RADIO_INT_END_MASK;
+
+#if defined(RADIO_EVENTS_RSSIEND_EVENTS_RSSIEND_Msk)
+	radio_irq_mask |= NRF_RADIO_INT_RSSIEND_MASK;
+#endif
 
 #if DIRECTION_FINDING_SUPPORTED
 	if (dtm_inst.cte_info.mode != DTM_CTE_MODE_OFF) {
@@ -1810,9 +1816,6 @@ static void radio_prepare(bool rx)
 	NVIC_ClearPendingIRQ(RADIO_IRQn);
 
 	if (rx) {
-		/* Keep RX IRQ load minimal to preserve UART command responsiveness.
-		 * END is sufficient for packet counting and RX restart.
-		 */
 		irq_enable(RADIO_IRQn);
 		nrf_radio_int_enable(NRF_RADIO, radio_irq_mask);
 
