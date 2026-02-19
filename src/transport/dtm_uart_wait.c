@@ -43,10 +43,10 @@ BUILD_ASSERT(NRFX_CONCAT_3(CONFIG_, NRFX_TIMER, WAIT_TIMER_INSTANCE) == 1,
  * the UART should be polled every 260 us.
  */
 #define DTM_UART_POLL_CYCLE ((uint32_t) (10 * 1e6 / DTM_UART_BAUDRATE / 2))
-/* Guard timeout to avoid blocking forever if wait timer IRQ is starved
- * during intensive radio activity.
+/* Guard timeout to avoid blocking forever if wait timer IRQ is starved.
+ * Keep this much shorter than one UART byte time to avoid missing bytes.
  */
-#define DTM_UART_WAIT_TIMEOUT_US (5000U)
+#define DTM_UART_WAIT_TIMEOUT_US ((DTM_UART_POLL_CYCLE / 2U) + 1U)
 #else
 #error "DTM UART node not found"
 #endif /* DT_NODE_HAS_PROP(DTM_UART, currrent_speed) */
@@ -99,8 +99,8 @@ void dtm_uart_wait(void)
 
 	err = k_sem_take(&wait_sem, K_USEC(DTM_UART_WAIT_TIMEOUT_US));
 	if (err == -EAGAIN) {
-		/* The timeout prevents the DTM command loop from deadlocking when
-		 * timer IRQ servicing is delayed by high radio interrupt load.
+		/* Fallback to software wait when timer IRQ servicing is delayed.
+		 * Keep polling cadence tight enough for 19200 8N1 reception.
 		 */
 		nrfx_timer_disable(&wait_timer);
 		nrfx_timer_clear(&wait_timer);
