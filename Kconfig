@@ -6,6 +6,18 @@
 
 mainmenu "Nordic DTM sample"
 
+# --- 추가된 부분: prj.conf의 설정을 인식시키기 위한 애플리케이션 심볼 ---
+config BT_DTM_APP
+	bool "Enable DTM Application Logic"
+	default y
+	select BT_CTLR_DTM if BT_CTLR
+	select BT_CTLR_DTM_UART if BT_CTLR
+	help
+	  This symbol enables the DTM application logic and selects 
+	  necessary controller-level DTM symbols.
+
+# ---------------------------------------------------------
+
 config DTM_RADIO_IRQ_PRIORITY
 	int "Radio interrupt priority"
 	range 0 5 if ZERO_LATENCY_IRQS
