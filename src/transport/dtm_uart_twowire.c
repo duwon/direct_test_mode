@@ -67,8 +67,11 @@ LOG_MODULE_REGISTER(dtm_tw_tr, CONFIG_DTM_TRANSPORT_LOG_LEVEL);
 #define DTM_LE_AOD_1US_RECEPTION            BIT(8)
 #define DTM_LE_AOA_1US_RECEPTION            BIT(9)
 
-/* The DTM maximum wait time in milliseconds for the UART command second byte. */
-#define DTM_UART_SECOND_BYTE_MAX_DELAY 5
+/* The DTM maximum wait time in milliseconds for the UART command second byte.
+ * Some desktop UART stacks can introduce >5 ms inter-byte gaps on low baudrate
+ * links, especially after stop/start transitions. Use a more tolerant window.
+ */
+#define DTM_UART_SECOND_BYTE_MAX_DELAY 50
 
 static const struct device *dtm_uart = DEVICE_DT_GET(DTM_UART);
 
